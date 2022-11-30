@@ -1,3 +1,4 @@
+from collections import defaultdict
 from condenser.topo_orderer import get_topological_order_by_tables
 from condenser.subset_utils import (
     UnionFind,
@@ -146,6 +147,13 @@ class Subset:
                 "Disconnected tables completed in {}s".format(time.time() - start_time)
             )
 
+        print("VACUUM tables")
+        for table in self.__all_tables:
+            self.__db_helper.vacuum(
+                "ANALYZE {}".format(fully_qualified_table(table)),
+                conn=self.__destination_conn,
+            )
+
     def prep_temp_dbs(self):
         self.__db_helper.prep_temp_dbs(self.__source_conn, self.__destination_conn)
 
@@ -186,6 +194,7 @@ class Subset:
         )
 
     def __subset_upstream(self, target, processed_tables, relationships):
+        print("Subsetting ", target)
 
         redacted_relationships = redact_relationships(relationships)
         relevant_key_constraints = list(
@@ -202,6 +211,7 @@ class Subset:
             return False
 
         temp_target_name = "subset_temp_" + table_name(target)
+        temp_ids_tables = []
 
         try:
             # copy the whole table
@@ -215,41 +225,69 @@ class Subset:
                 ),
                 self.__destination_conn,
             )
-            query = "SELECT {} FROM {}".format(
-                columns_query, fully_qualified_table(target)
-            )
-            self.__db_helper.copy_rows(
-                self.__source_conn, self.__destination_conn, query, temp_target_name
-            )
 
             # filter it down in the target database
             table_columns = self.__db_helper.get_table_columns(
-                table_name(target), schema_name(target), self.__source_conn
+                conn=self.__source_conn,
+                schema=schema_name(target),
+                table=table_name(target),
             )
-            clauses = [
-                "{} IN (SELECT {} FROM {})".format(
-                    columns_tupled(kc["fk_columns"]),
+
+            clauses = []
+            for kc in relevant_key_constraints:
+                source_ids_query = "SELECT {} FROM {}".format(
                     columns_joined(kc["target_columns"]),
                     fully_qualified_table(
                         mysql_db_name_hack(kc["target_table"], self.__destination_conn)
                     ),
                 )
-                for kc in relevant_key_constraints
-            ]
+                temp_ids_table_name = "subset_temp_ids_" + str(uuid.uuid4()).replace("-", "")
+                temp_ids_tables.append(temp_ids_table_name)
+
+                self.__db_helper.run_query(
+                    "CREATE TEMPORARY TABLE {} AS {} LIMIT 0".format(
+                        temp_ids_table_name,
+                        source_ids_query,
+                    ),
+                    self.__source_conn,
+                )
+
+                self.__db_helper.copy_rows(
+                    source=self.__destination_conn,
+                    destination=self.__source_conn,
+                    query=source_ids_query,
+                    destination_table=temp_ids_table_name,
+                )
+
+                clauses.append(
+                    "{} IN (SELECT * FROM {})".format(
+                        columns_tupled(kc["fk_columns"]),
+                        temp_ids_table_name,
+                    )
+                )
+
             clauses.extend(upstream_filter_match(target, table_columns))
 
-            select_query = "SELECT * FROM {} WHERE TRUE AND {}".format(
-                quoter(temp_target_name), " AND ".join(clauses)
+            select_query = "SELECT {} FROM {} WHERE TRUE AND {}".format(
+                columns_query, fully_qualified_table(target), " AND ".join(clauses)
             )
             if config_reader.get_max_rows_per_table() is not None:
                 select_query += " LIMIT {}".format(
                     config_reader.get_max_rows_per_table()
                 )
-            insert_query = "INSERT INTO {} {}".format(
+
+            self.__db_helper.copy_rows(
+                source=self.__source_conn,
+                destination=self.__destination_conn,
+                query=select_query,
+                destination_table=temp_target_name
+            )
+
+            insert_query = "INSERT INTO {} SELECT * FROM {}".format(
                 fully_qualified_table(
                     mysql_db_name_hack(target, self.__destination_conn)
                 ),
-                select_query,
+                quoter(temp_target_name),
             )
             self.__db_helper.run_query(insert_query, self.__destination_conn)
             self.__destination_conn.commit()
@@ -265,6 +303,24 @@ class Subset:
                 ),
                 self.__destination_conn,
             )
+            for temp_table_name in temp_ids_tables:
+                self.__db_helper.run_query(
+                    "DROP {} TABLE IF EXISTS {}".format(
+                        mysql_temporary, quoter(temp_table_name)
+                    ),
+                    self.__source_conn,
+                )
+
+        source_count = self.__db_helper.get_table_count_estimate(
+            conn=self.__source_conn,
+            schema=schema_name(target),
+            table_name=table_name(target),
+        )
+        subset_count = self.__db_helper.get_table_count(
+            conn=self.__destination_conn,
+            table=target
+        )
+        print("Subsetted {} out of {} rows\n".format(subset_count, source_count))
 
         return True
 
@@ -280,69 +336,68 @@ class Subset:
             table, self.__all_tables, self.__source_conn
         )
 
-        if len(referencing_tables) > 0:
-            pk_columns = referencing_tables[0]["target_columns"]
-        else:
-            return
-
-        temp_table = self.__db_helper.create_id_temp_table(
-            self.__destination_conn, len(pk_columns)
-        )
-
+        relationships_by_ref = defaultdict(list)
         for r in referencing_tables:
-            fk_table = r["fk_table"]
-            fk_columns = r["fk_columns"]
+            relationships_by_ref[tuple(r["target_columns"])].append(r)
 
-            q = "SELECT {} FROM {} WHERE {} NOT IN (SELECT {} FROM {})".format(
-                columns_joined(fk_columns),
-                fully_qualified_table(
-                    mysql_db_name_hack(fk_table, self.__destination_conn)
-                ),
-                columns_tupled(fk_columns),
-                columns_joined(pk_columns),
-                fully_qualified_table(
-                    mysql_db_name_hack(table, self.__destination_conn)
-                ),
+        for pk_columns, referencing_tables in relationships_by_ref.items():
+            temp_table = self.__db_helper.create_id_temp_table(
+                self.__destination_conn, len(pk_columns)
             )
-            self.__db_helper.copy_rows(
-                self.__destination_conn, self.__destination_conn, q, temp_table
+            for r in referencing_tables:
+                fk_table = r["fk_table"]
+                fk_columns = r["fk_columns"]
+
+                q = "SELECT {} FROM {} WHERE {} NOT IN (SELECT {} FROM {})".format(
+                    columns_joined(fk_columns),
+                    fully_qualified_table(
+                        mysql_db_name_hack(fk_table, self.__destination_conn)
+                    ),
+                    columns_tupled(fk_columns),
+                    columns_joined(pk_columns),
+                    fully_qualified_table(
+                        mysql_db_name_hack(table, self.__destination_conn)
+                    ),
+                )
+                self.__db_helper.copy_rows(
+                    self.__destination_conn, self.__destination_conn, q, temp_table
+                )
+
+            columns_query = columns_to_copy(table, relationships, self.__source_conn)
+
+            cursor_name = "table_cursor_" + str(uuid.uuid4()).replace("-", "")
+            cursor = self.__destination_conn.cursor(name=cursor_name, withhold=True)
+            cursor_query = "SELECT DISTINCT * FROM {}".format(
+                fully_qualified_table(temp_table)
             )
+            cursor.execute(cursor_query)
+            fetch_row_count = 100000
+            while True:
+                rows = cursor.fetchmany(fetch_row_count)
+                if len(rows) == 0:
+                    break
 
-        columns_query = columns_to_copy(table, relationships, self.__source_conn)
+                ids = [
+                    "(" + ",".join(["'" + str(c) + "'" for c in row]) + ")"
+                    for row in rows
+                    if all([c is not None for c in row])
+                ]
 
-        cursor_name = "table_cursor_" + str(uuid.uuid4()).replace("-", "")
-        cursor = self.__destination_conn.cursor(name=cursor_name, withhold=True)
-        cursor_query = "SELECT DISTINCT * FROM {}".format(
-            fully_qualified_table(temp_table)
-        )
-        cursor.execute(cursor_query)
-        fetch_row_count = 100000
-        while True:
-            rows = cursor.fetchmany(fetch_row_count)
-            if len(rows) == 0:
-                break
+                if len(ids) == 0:
+                    break
 
-            ids = [
-                "(" + ",".join(["'" + str(c) + "'" for c in row]) + ")"
-                for row in rows
-                if all([c is not None for c in row])
-            ]
+                ids_to_query = ",".join(ids)
+                q = "SELECT {} FROM {} WHERE {} IN ({})".format(
+                    columns_query,
+                    fully_qualified_table(table),
+                    columns_tupled(pk_columns),
+                    ids_to_query,
+                )
+                self.__db_helper.copy_rows(
+                    self.__source_conn,
+                    self.__destination_conn,
+                    q,
+                    mysql_db_name_hack(table, self.__destination_conn),
+                )
 
-            if len(ids) == 0:
-                break
-
-            ids_to_query = ",".join(ids)
-            q = "SELECT {} FROM {} WHERE {} IN ({})".format(
-                columns_query,
-                fully_qualified_table(table),
-                columns_tupled(pk_columns),
-                ids_to_query,
-            )
-            self.__db_helper.copy_rows(
-                self.__source_conn,
-                self.__destination_conn,
-                q,
-                mysql_db_name_hack(table, self.__destination_conn),
-            )
-
-        cursor.close()
+            cursor.close()

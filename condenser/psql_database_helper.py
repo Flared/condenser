@@ -34,6 +34,7 @@ def turn_off_constraints(connection):
 
 
 def copy_rows(source, destination, query, destination_table):
+    print("Copying rows: ", query)
     datatypes = get_table_datatypes(
         table_name(destination_table), schema_name(destination_table), destination
     )
@@ -200,6 +201,7 @@ def get_unredacted_fk_relationships(tables, conn):
 
 
 def run_query(query, conn, commit=True):
+    print("Query: ", query)
     with conn.cursor() as cur:
         cur.execute(query)
         if commit:
@@ -212,6 +214,14 @@ def get_table_count_estimate(table_name, schema, conn):
             'SELECT reltuples::BIGINT AS count FROM pg_class WHERE oid=\'"{}"."{}"\'::regclass'.format(
                 schema, table_name
             )
+        )
+        return cur.fetchone()[0]
+
+def get_table_count(table, conn):
+    table_name = fully_qualified_table(table)
+    with conn.cursor() as cur:
+        cur.execute(
+            'SELECT count(*) FROM {}'.format(table_name)
         )
         return cur.fetchone()[0]
 
@@ -273,3 +283,10 @@ def truncate_table(target_table, conn):
     with conn.cursor() as cur:
         cur.execute("TRUNCATE TABLE {}".format(target_table))
         conn.commit()
+
+def vacuum(args, conn):
+    old_isolation_level = conn.connection.isolation_level
+    conn.connection.set_isolation_level(0)
+    query = "VACUUM " + args
+    run_query(query, conn, commit=False)
+    conn.connection.set_isolation_level(old_isolation_level)

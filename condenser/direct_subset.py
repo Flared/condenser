@@ -32,11 +32,13 @@ def run():
         db_type, config_reader.get_destination_db_connection_info()
     )
 
+    print("Readying destination database")
     database = db_creator(db_type, source_dbc, destination_dbc)
     database.teardown()
     database.create()
 
     # Get list of tables to operate on
+    print("Listing tables")
     db_helper = database_helper.get_specific_helper()
     all_tables = db_helper.list_all_tables(source_dbc)
     all_tables = [x for x in all_tables if x not in config_reader.get_excluded_tables()]
