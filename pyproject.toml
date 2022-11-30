@@ -10,12 +10,13 @@ packages = [{include = "condenser"}]
 subset = 'condenser.direct_subset:run'
 
 [tool.poetry.dependencies]
-python = "^3.6"
+python = "^3.7"
 toposort = "^1.7"
 psycopg2-binary = {version = "^2.9.5", optional = true}
 mysql-connector-python = {version = "^8.0.31", optional = true}
 
 [tool.poetry.dev-dependencies]
+black = "^22.10.0"
 
 [tool.poetry.extras]
 postgres = ["psycopg2-binary"]
