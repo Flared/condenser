@@ -35,7 +35,7 @@ def run():
     print("Readying destination database")
     database = db_creator(db_type, source_dbc, destination_dbc)
     database.teardown()
-    database.create()
+    database.create(config_reader.get_ignored_schema_keywords())
 
     # Get list of tables to operate on
     print("Listing tables")

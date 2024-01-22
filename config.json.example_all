@@ -53,5 +53,6 @@
         }
     ],
     "pre_constraint_sql":["DELETE FROM table where non_nullable_column IS NULL"],
-    "post_subset_sql": ["UPDATE a_table SET a_column = 'value'"]
+    "post_subset_sql": ["UPDATE a_table SET a_column = 'value'"],
+    "ignored_schema_keywords": ["COMMENT ON EXTENSION"]
  }

@@ -23,5 +23,6 @@
     "passthrough_tables": [ ],
     "dependency_breaks": [ ],
     "fk_augmentation": [ ],
-    "upstream_filters": [ ]
+    "upstream_filters": [ ],
+    "ignored_schema_keywords": []
  }
