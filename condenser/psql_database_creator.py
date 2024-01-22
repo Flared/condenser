@@ -136,9 +136,8 @@ class PsqlDatabaseCreator:
             self.run_psql(result.stdout.decode("utf-8"))
 
     def __filter_commands(self, input):
-        print(input)
         input = input.split("\n")
-        filtered_key_words = ["COMMENT ON CONSTRAINT", "COMMENT ON EXTENSION", "pg_hint_plan", "apg_plan_mgmt"]
+        filtered_key_words = ["COMMENT ON CONSTRAINT", "COMMENT ON EXTENSION", "CREATE EXTENSION IF NOT EXISTS apg_plan_mgmt", "CREATE EXTENSION IF NOT EXISTS pg_hint_plan"]
 
         retval = []
         for line in input:
