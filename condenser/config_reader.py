@@ -99,6 +99,10 @@ def get_max_rows_per_table():
     return _config["max_rows_per_table"] if "max_rows_per_table" in _config else None
 
 
+def get_ignored_schema_keywords():
+    return _config["ignored_schema_keywords"] if "ignored_schema_keywords" in _config else []
+
+
 def __convert_tonic_format(obj):
     if "fk_schema" in obj:
         return {

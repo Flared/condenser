@@ -6,7 +6,7 @@ class MySqlDatabaseCreator:
         self.__source_connect = source_connect
         self.__destination_connect = destination_connect
 
-    def create(self):
+    def create(self, ignored_schema_keywords=[]):
         cur_path = os.getcwd()
 
         mysql_bin_path = get_mysql_bin_path()
@@ -122,4 +122,4 @@ if __name__ == "__main__":
     )
     msdbc = MySqlDatabaseCreator(src_connect, dest_connect)
     msdbc.teardown()
-    msdbc.create()
+    msdbc.create(config_reader.get_ignored_schema_keywords())

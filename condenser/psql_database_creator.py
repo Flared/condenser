@@ -35,7 +35,7 @@ class PsqlDatabaseCreator:
         if os.path.exists(self.create_error_path):
             os.remove(self.create_error_path)
 
-    def create(self):
+    def create(self, ignored_schema_keywords=[]):
 
         if self.use_existing_dump == True:
             pass
@@ -74,7 +74,7 @@ class PsqlDatabaseCreator:
                 )
             os.chdir(cur_path)
 
-            pre_data_sql = self.__filter_commands(result.stdout.decode("utf-8"))
+            pre_data_sql = self.__filter_commands(result.stdout.decode("utf-8"), ignored_schema_keywords)
             self.run_psql(pre_data_sql)
 
     def teardown(self):
@@ -135,10 +135,12 @@ class PsqlDatabaseCreator:
 
             self.run_psql(result.stdout.decode("utf-8"))
 
-    def __filter_commands(self, input):
-
+    def __filter_commands(self, input, ignored_schema_keywords):
         input = input.split("\n")
         filtered_key_words = ["COMMENT ON CONSTRAINT", "COMMENT ON EXTENSION"]
+
+        if ignored_schema_keywords:
+            filtered_key_words.extend(ignored_schema_keywords)
 
         retval = []
         for line in input:

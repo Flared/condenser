@@ -83,6 +83,8 @@ Below we describe the use of all configuration parameters, but the best place to
 
 `post_subset_sql`: An array of SQL commands that will be issued on the destination database after subsetting is complete, and after the database constraints have been applied. Useful to perform additional adhoc tasks after subsetting.
 
+`ignored_schema_keywords`: An array of SQL commands prefix to ignore for the Schema creation of the subset database.
+
 # Running
 
 Almost all the configuration is in the `config.json` file, so running is as simple as
