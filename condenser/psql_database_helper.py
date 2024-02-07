@@ -32,9 +32,16 @@ def turn_off_constraints(connection):
     # can't be done in postgres
     pass
 
+def truncate(s: str, max_len: int) -> str:
+    if len(s) > max_len:
+        return s[:max_len//2] + "<...>" + s[-max_len//2:]
+    return s
 
-def copy_rows(source, destination, query, destination_table):
-    print("Copying rows: ", query)
+def copy_rows(source, destination, query, destination_table, estimated_count: int=0):
+    if estimated_count:
+        print(f"Copying {estimated_count} rows: {truncate(query, 1600)}")
+    else:
+        print("Copying rows: ", truncate(query, 1600))
     datatypes = get_table_datatypes(
         table_name(destination_table), schema_name(destination_table), destination
     )
@@ -54,8 +61,10 @@ def copy_rows(source, destination, query, destination_table):
     cursor.execute(query)
 
     fetch_row_count = 100000
+    count = 0
     while True:
         rows = cursor.fetchmany(fetch_row_count)
+        count += len(rows)
         if len(rows) == 0:
             break
 
@@ -71,6 +80,7 @@ def copy_rows(source, destination, query, destination_table):
 
         destination_cursor.close()
 
+    print(f"Copied {count} rows")
     cursor.close()
     destination.commit()
 

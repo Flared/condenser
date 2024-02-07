@@ -392,6 +392,7 @@ class Subset:
                     fully_qualified_table(table),
                     columns_tupled(pk_columns),
                     ids_to_query,
+                    len(ids)
                 )
                 self.__db_helper.copy_rows(
                     self.__source_conn,

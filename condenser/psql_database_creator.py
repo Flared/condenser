@@ -46,14 +46,7 @@ class PsqlDatabaseCreator:
             if pg_dump_path != "":
                 os.chdir(pg_dump_path)
 
-            connection = "--dbname=postgresql://{0}@{2}:{3}/{4}?{1}".format(
-                self.source_dbc.user,
-                urllib.parse.urlencode({"password": self.source_dbc.password}),
-                self.source_dbc.host,
-                self.source_dbc.port,
-                self.source_dbc.db_name,
-            )
-
+            connection = self.source_dbc.get_url()
             result = subprocess.run(
                 [
                     "pg_dump",
@@ -105,13 +98,7 @@ class PsqlDatabaseCreator:
             pg_dump_path = get_pg_bin_path()
             if pg_dump_path != "":
                 os.chdir(pg_dump_path)
-            connection = "--dbname=postgresql://{0}@{2}:{3}/{4}?{1}".format(
-                self.source_dbc.user,
-                urllib.parse.urlencode({"password": self.source_dbc.password}),
-                self.source_dbc.host,
-                self.source_dbc.port,
-                self.source_dbc.db_name,
-            )
+            connection = self.source_dbc.get_url()
             result = subprocess.run(
                 [
                     "pg_dump",
@@ -164,16 +151,8 @@ class PsqlDatabaseCreator:
             os.chdir(pg_dump_path)
 
         connection_info = self.destination_dbc
-        connection_string = "--dbname=postgresql://{0}@{2}:{3}/{4}?{1}".format(
-            connection_info.user,
-            urllib.parse.urlencode({"password": connection_info.password}),
-            connection_info.host,
-            connection_info.port,
-            connection_info.db_name,
-        )
-
         result = subprocess.run(
-            ["psql", connection_string, "-c {0}".format(query)],
+            ["psql", connection_info.get_url(), "-c {0}".format(query)],
             stderr=subprocess.PIPE,
             stdout=subprocess.DEVNULL,
         )
@@ -193,17 +172,9 @@ class PsqlDatabaseCreator:
             os.chdir(pg_dump_path)
 
         connect = self.destination_dbc
-        connection_string = "--dbname=postgresql://{0}@{2}:{3}/{4}?{1}".format(
-            connect.user,
-            urllib.parse.urlencode({"password": connect.password}),
-            connect.host,
-            connect.port,
-            connect.db_name,
-        )
-
         input = queries.encode("utf-8")
         result = subprocess.run(
-            ["psql", connection_string],
+            ["psql", connect.get_url()],
             stderr=subprocess.PIPE,
             input=input,
             stdout=subprocess.DEVNULL,

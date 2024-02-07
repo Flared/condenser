@@ -1,32 +1,52 @@
+import urllib.parse
 from condenser import config_reader
 import os, pathlib, re, urllib, subprocess, os.path, json, getpass, time, sys, datetime
 
 
 class DbConnect:
     def __init__(self, db_type, connection_info):
-        requiredKeys = ["user_name", "host", "db_name", "port"]
+        self.url = None
+        if "url" in connection_info:
+            self.url = connection_info["url"]
+        else:
+            requiredKeys = ["user_name", "host", "db_name", "port"]
 
-        for r in requiredKeys:
-            if r not in connection_info.keys():
-                raise Exception(
-                    "Missing required key in database connection info: " + r
+            for r in requiredKeys:
+                if r not in connection_info.keys():
+                    raise Exception(
+                        "Missing required key in database connection info: " + r
+                    )
+            if "password" not in connection_info.keys():
+                connection_info["password"] = getpass.getpass(
+                    "Enter password for {0} on host {1}: ".format(
+                        connection_info["user_name"], connection_info["host"]
+                    )
                 )
-        if "password" not in connection_info.keys():
-            connection_info["password"] = getpass.getpass(
-                "Enter password for {0} on host {1}: ".format(
-                    connection_info["user_name"], connection_info["host"]
-                )
-            )
 
-        self.user = connection_info["user_name"]
-        self.password = connection_info["password"]
-        self.host = connection_info["host"]
-        self.port = connection_info["port"]
-        self.db_name = connection_info["db_name"]
+            self.user = connection_info["user_name"]
+            self.password = connection_info["password"]
+            self.host = connection_info["host"]
+            self.port = connection_info["port"]
+            self.db_name = connection_info["db_name"]
+
         self.ssl_mode = (
             connection_info["ssl_mode"] if "ssl_mode" in connection_info else None
         )
         self.__db_type = db_type.lower()
+
+    def get_url(self, with_ssl_mode: bool=False) -> str:
+        if self.url:
+            url = self.url
+        else:
+            url = "postgresql://{0}@{2}:{3}/{4}?{1}".format(
+                self.user,
+                urllib.parse.urlencode({"password": self.password}),
+                self.host,
+                self.port,
+                self.db_name,
+            )
+        return url
+
 
     def get_db_connection(self, read_repeatable=False):
 
@@ -83,23 +103,7 @@ class LoggingCursor:
 class PsqlConnection(DbConnection):
     def __init__(self, connect, read_repeatable):
         import psycopg2
-
-        connection_string = (
-            "dbname='{0}' user='{1}' password='{2}' host={3} port={4}".format(
-                connect.db_name,
-                connect.user,
-                connect.password,
-                connect.host,
-                connect.port,
-            )
-        )
-
-        if connect.ssl_mode:
-            connection_string = connection_string + " sslmode={0}".format(
-                connect.ssl_mode
-            )
-
-        DbConnection.__init__(self, psycopg2.connect(connection_string))
+        DbConnection.__init__(self, psycopg2.connect(connect.get_url(True)))
         if read_repeatable:
             self.connection.isolation_level = (
                 psycopg2.extensions.ISOLATION_LEVEL_REPEATABLE_READ
